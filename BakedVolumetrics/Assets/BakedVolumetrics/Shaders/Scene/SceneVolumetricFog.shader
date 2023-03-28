@@ -18,21 +18,23 @@
 
     SubShader
     {
-        Tags { "RenderType" = "Transparent" "Queue" = "Transparent+2000" }
+        Tags { "LightMode" = "Always" "RenderType" = "Transparent" "Queue" = "Transparent+2000" }
 
         Cull Off
         ZWrite Off
         ZTest Off
+        ColorMask RGB
 
         Blend SrcAlpha OneMinusSrcAlpha
 
         Pass
         {
+            Name "Forward"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing  
-            #pragma multi_compile SAMPLES_8 SAMPLES_16 SAMPLES_24 SAMPLES_32 SAMPLES_48 SAMPLES_64 SAMPLES_128
+            #pragma multi_compile_local SAMPLES_8 SAMPLES_16 SAMPLES_24 SAMPLES_32 SAMPLES_48 SAMPLES_64 SAMPLES_128
             #include "UnityCG.cginc"
 
 
@@ -83,6 +85,7 @@
             fixed _RaymarchStepSize;
 
             sampler2D_half _JitterTexture;
+            fixed4 _JitterTexture_TexelSize;
             fixed _RaymarchJitterStrength;
 
             UNITY_DECLARE_SCREENSPACE_TEXTURE(_CameraDepthTexture);
@@ -90,10 +93,31 @@
             fixed4 _CameraDepthTexture_TexelSize;
 
             //sample a noise texture instead of calculating one (should save on resources)
-            fixed noise(fixed2 p)
+            fixed noiseOld(fixed2 p)
             {
                 return tex2Dlod(_JitterTexture, fixed4(p, 0, 0)).r;
             }
+
+            float r2sequence(float2 pixel) {
+                const float a1 = 0.75487766624669276;
+                const float a2 = 0.569840290998;
+                return frac(a1 * float(pixel.x) + a2 * float(pixel.y));
+            }
+
+            float2 r2_modified(float idx, float2 seed)
+            {
+                return frac(seed + float(idx) * float2(0.245122333753, 0.430159709002));
+            }
+
+            fixed noise(fixed2 p)
+            {
+                float2 offset = r2_modified(_Time.y, _ScreenParams.xy);
+                p+=offset;
+                float2 nuv = p * _ScreenParams.xy * _JitterTexture_TexelSize.xy;
+                int selector = (_Time.y % (1.0/8.0))*32;
+                return tex2Dlod(_JitterTexture, fixed4(nuv, 0, 0))[selector];
+            }
+            
 
             v2f vert(appdata v)
             {
@@ -106,7 +130,7 @@
 
                 o.vertex = UnityObjectToClipPos(v.vertex);
 
-                o.screenPos = UnityStereoTransformScreenSpaceTex(ComputeScreenPos(o.vertex));
+                o.screenPos = ComputeScreenPos(o.vertex);
 
                 o.camRelativeWorldPos = mul(unity_ObjectToWorld, fixed4(v.vertex.xyz, 1.0)).xyz - _WorldSpaceCameraPos;
 
@@ -128,13 +152,6 @@
                     screenUV.y = 1 - screenUV.y;
 #endif
 
-#if UNITY_SINGLE_PASS_STEREO
-                // If Single-Pass Stereo mode is active, transform the
-                // coordinates to get the correct output UV for the current eye.
-                float4 scaleOffset = unity_StereoScaleOffset[unity_StereoEyeIndex];
-                screenUV = (screenUV - scaleOffset.zw) / scaleOffset.xy;
-#endif
-
                 //draw our scene depth texture and linearize it
                 fixed linearDepth = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, screenUV));
 
@@ -148,8 +165,11 @@
                 fixed3 scaledWorldPos = ((worldPos - _VolumePos) + _VolumeSize * 0.5) / _VolumeSize;
                 fixed3 scaledCameraPos = ((_WorldSpaceCameraPos - _VolumePos) + _VolumeSize * 0.5) / _VolumeSize;
 
+                // UV offset by orientation
+                float3 localViewDir = normalize(UnityWorldSpaceViewDir(worldPos));
+
                 //compute jitter
-                fixed jitter = 1.0f + noise(screenUV.xy * 10000.0f) * _RaymarchStepSize * _RaymarchJitterStrength;
+                fixed jitter = 1.0f + noise(screenUV + length(localViewDir)) * _RaymarchStepSize * _RaymarchJitterStrength;
 
                 //get our ray increment vector that we use so we can march into the scene. Jitter it also so we can mitigate banding/stepping artifacts
                 fixed3 raymarch_rayIncrement = normalize(i.camRelativeWorldPos.xyz) / _RaymarchSteps;

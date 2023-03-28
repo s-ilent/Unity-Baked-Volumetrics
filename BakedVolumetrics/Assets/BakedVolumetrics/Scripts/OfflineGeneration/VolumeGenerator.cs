@@ -420,8 +420,16 @@ namespace BakedVolumetrics
 
             string jitterAssetName = "Jitter.asset";
             string jitterAssetPath = sharedVolumetricsFolder + "/" + jitterAssetName;
+            
+            string bnoiseAssetName = "blueNoiseLookup.png";
+            string bnoiseAssetPath = sharedVolumetricsFolder + "/" + bnoiseAssetName;
 
-            Texture2D jitter = AssetDatabase.LoadAssetAtPath<Texture2D>(jitterAssetPath);
+            Texture2D jitter = AssetDatabase.LoadAssetAtPath<Texture2D>(bnoiseAssetPath);
+            
+            if (jitter == null)
+            {
+            jitter = AssetDatabase.LoadAssetAtPath<Texture2D>(jitterAssetPath);
+            }
 
             if (jitter == null)
             {
