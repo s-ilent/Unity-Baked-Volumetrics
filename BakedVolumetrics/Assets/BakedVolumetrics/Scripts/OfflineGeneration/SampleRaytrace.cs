@@ -61,14 +61,62 @@ namespace BakedVolumetrics
         //|||||||||||||||||||||||||||||||||||||||||||||||||||||||| LIGHTS ||||||||||||||||||||||||||||||||||||||||||||||||||||||||
         //|||||||||||||||||||||||||||||||||||||||||||||||||||||||| LIGHTS ||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+        private Vector3 GetSamplePositionOnSphere(int id, int numRays)
+        {
+            float fNumRays = (float)numRays;
+            float goldenRatio = (1.0f + Mathf.Pow(5.0f,0.5f))/2.0f;
+            RaycastHit hit;
+
+            float epsilon = (numRays >= 600000)
+            ? 214f
+            : (numRays >= 400000)
+            ? 75f
+            : (numRays >= 11000)
+            ? 27f
+            : (numRays >= 890)
+            ? 10f
+            : (numRays >= 177)
+            ? 3.33f
+            : (numRays >= 24)
+            ? 1.33f
+            : 0.33f;
+
+            float fi = id;
+            float theta = 2.0f * Mathf.PI * fi / goldenRatio;
+            //float phi = Mathf.Acos(1.0f - 2.0f*(fi+0.5)/fNumRays));
+            float phi = Mathf.Acos(1.0f - 2.0f*(fi+epsilon)/(fNumRays-1.0f+2.0f*epsilon));
+
+            Vector3 rayDir;
+            rayDir.x = Mathf.Cos(theta) * Mathf.Sin(phi);
+            rayDir.y = Mathf.Sin(theta) * Mathf.Sin(phi);
+            rayDir.z = Mathf.Cos(phi);
+            rayDir.y += 1;
+            rayDir = rayDir.normalized;
+
+            return rayDir;
+        }
+
         private Color SampleAmbientLight(Vector3 probePosition)
         {
             Color ambientSample = ambientColor * ambientIntensity;
+            const int sampleCount = 64;
 
             if(doSkylight)
             {
+                if (true)
+                {
+                    for (int sample = 0; sample < sampleCount; sample++)
+                    {
+                        Vector3 sampleDir = GetSamplePositionOnSphere(sample, sampleCount);
+                        if (Physics.Raycast(probePosition, sampleDir, float.MaxValue) == false)
+                            ambientSample += skylightColor * skylightIntensity * (1.0f / sampleCount);
+                    }
+                }
+                else
+                {
                 if (Physics.Raycast(probePosition, Vector3.up, float.MaxValue) == false)
                     ambientSample += skylightColor * skylightIntensity;
+                }
             }
 
             return ambientSample;
